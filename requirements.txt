@@ -1,0 +1,9 @@
+pandas
+numpy
+requests
+urllib3
+gspread
+google-auth
+gspread-dataframe
+papermill
+ipywidgets
