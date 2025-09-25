@@ -1,9 +1,14 @@
 pandas
 numpy
 requests
-urllib3
+matplotlib
+openpyxl
+pyarrow
 gspread
-google-auth
 gspread-dataframe
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
 papermill
-ipywidgets
+ipykernel
