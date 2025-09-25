@@ -1,0 +1,91 @@
+name: Ejecutar Curvas de Cobro (mensual con lógica del 5)
+
+on:
+  schedule:
+    # 12:00 p.m. Bogotá = 17:00 UTC
+    # Programamos 3–7 y decidimos dentro del job si corresponde correr
+    - cron: '0 17 3-7 * *'
+  workflow_dispatch: {}
+
+jobs:
+  run-mensual:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Chequear repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install papermill ipykernel
+
+      - name: Registrar kernel python3
+        run: |
+          python -m ipykernel install --name python3 --sys-prefix
+
+      # ---------- Decidir si hoy se debe ejecutar (zona horaria Bogotá) ----------
+      - id: decider
+        name: Decidir si correr hoy según regla del día 5
+        shell: bash
+        run: |
+          TZ=America/Bogota
+          TODAY=$(TZ=$TZ date +%Y-%m-%d)
+          DOW_TODAY=$(TZ=$TZ date +%u)      # 1=Lun ... 7=Dom
+          DAY=$(TZ=$TZ date +%d)
+          YEAR=$(TZ=$TZ date +%Y)
+          MONTH=$(TZ=$TZ date +%m)
+
+          TARGET="${YEAR}-${MONTH}-05"
+          DOW5=$(TZ=$TZ date -d "$TARGET" +%u)
+
+          RUN=false
+
+          # Caso A: el 5 es laboral (lun-vie) y hoy es el 5
+          if [[ "$DAY" == "05" && $DOW_TODAY -ge 1 && $DOW_TODAY -le 5 ]]; then
+            RUN=true
+          fi
+
+          # Caso B: el 5 cae en fin de semana → corre viernes anterior, lunes 6, martes 7
+          if [[ $DOW5 -ge 6 ]]; then
+            FRIDAY=$(TZ=$TZ date -d "$TARGET last Friday" +%Y-%m-%d)
+            MON=$(TZ=$TZ date -d "$TARGET +1 day" +%Y-%m-%d)
+            TUE=$(TZ=$TZ date -d "$TARGET +2 day" +%Y-%m-%d)
+            if [[ "$TODAY" == "$FRIDAY" || "$TODAY" == "$MON" || "$TODAY" == "$TUE" ]]; then
+              RUN=true
+            fi
+          fi
+
+          echo "Hoy: $TODAY (dow=$DOW_TODAY), 5 del mes: $TARGET (dow=$DOW5)"
+          echo "run=$RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Saltar si hoy no corresponde
+        if: steps.decider.outputs.run != 'true'
+        run: |
+          echo "Hoy no toca correr según la regla del día 5. Saliendo…"
+          exit 0
+
+      # ---------- Ejecutar el notebook ----------
+      - name: Ejecutar Codigo_act_CC
+        env:
+          USER_API:     ${{ secrets.USER_API }}
+          SECRET_API:   ${{ secrets.SECRET_API }}
+          CORREO_COLAB: ${{ secrets.CORREO_COLAB }}
+          MI_JSON:      ${{ secrets.MI_JSON }}
+        run: |
+          papermill "Codigo_act_CC.ipynb" "output_Codigo_act_CC.ipynb" \
+            --cwd . -k python3 --log-output
+
+      # ---------- Guardar artefacto ----------
+      - name: Subir artefacto
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: output-Codigo_act_CC
+          path: output_Codigo_act_CC.ipynb
