@@ -4,6 +4,7 @@ requests
 matplotlib
 openpyxl
 pyarrow
+pytz
 gspread
 gspread-dataframe
 google-api-python-client
